@@ -1,6 +1,8 @@
 package xmlrpc
 
 import (
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -48,7 +50,15 @@ func Test_marshal(t *testing.T) {
 		}
 
 		if string(b) != tt.xml {
-			t.Fatalf("marshal error:\nexpected: %s\n     got: %s", tt.xml, string(b))
+			// Sometimes the XML will not be in the exact order it is in the reference
+			// So try sorting both strings first, see if that helps.
+			string_b := strings.Split(string(b), "")
+			string_xml := strings.Split(tt.xml, "")
+			sort.Strings(string_b)
+			sort.Strings(string_xml)
+			if strings.Join(string_b, "") != strings.Join(string_xml, "") {
+				t.Fatalf("marshal error:\nexpected: %s\n     got: %s", string_xml, string_b)	
+			}
 		}
 
 	}

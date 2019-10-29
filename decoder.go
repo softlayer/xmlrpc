@@ -30,7 +30,10 @@ var (
 
 	dateFormats = []string{iso8601, iso8601hyphen, iso8601hyphenTZ}
 
-	topArrayRE = regexp.MustCompile(`^<\?xml version="1.0" encoding=".+"\?>\s*<params>\s*<param>\s*<value>\s*<array>`)
+	// This Regex exists to detect repsponses that contain an array. Which is required because the SoftLayer API
+	// will say it is returning an array, but actually return a struct if there is only one element.
+	// topArrayRE = regexp.MustCompile(`^<\?xml version="1.0" encoding=".+"\?>\s*<params>\s*<param>\s*<value>\s*<array>`)
+	topArrayRE = regexp.MustCompile(`<array>`)
 )
 
 type TypeMismatchError string

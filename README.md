@@ -70,6 +70,15 @@ implementation of xmlrpc that works over another protocol. To encode
 request body there is EncodeMethodCall function. To decode server
 response Response data type can be used.
 
+
+## Testing
+
+For a full test suite, you need to spin up the testing webserver
+`~go/src/github.com/softlayer/xmlrpc  $ ruby test_server.rb`
+
+Then run the tests
+`go test -v`
+
 ## Contribution
 
 Feel free to fork the project, submit pull requests, ask questions.

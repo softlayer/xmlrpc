@@ -22,6 +22,7 @@ type bookUnexported struct {
 	amount int
 }
 
+
 type timestamp time.Time
 
 var unmarshalTests = []struct {
@@ -44,6 +45,8 @@ var unmarshalTests = []struct {
 	{time.Unix(1386622812, 0).UTC(), new(*timestamp), "<value><dateTime.iso8601>20131209T21:00:12</dateTime.iso8601></value>"},
 	{time.Unix(1386622812, 0).UTC(), new(*timestamp), "<value><dateTime.iso8601>2013-12-09T21:00:12Z</dateTime.iso8601></value>"},
 	{[]int{1, 5, 7}, new(*[]int), "<value><array><data><value><int>1</int></value><value><int>5</int></value><value><int>7</int></value></data></array></value>"},
+	// Test specific to how SoftLayer can sometimes send out an array response.
+	// {[]int{1, 5, 7}, new(*[]int), "<?xml version=\"1.0\" encoding=\"UTF-8\"?><params><param><value><array><data><value><int>1</int></value><value><int>5</int></value><value><int>7</int></value></data></array></value></param></params></xml>"},
 	{book{"War and Piece", 20}, new(*book), "<value><struct><member><name>Title</name><value><string>War and Piece</string></value></member><member><name>Amount</name><value><int>20</int></value></member></struct></value>"},
 	{bookUnexported{}, new(*bookUnexported), "<value><struct><member><name>title</name><value><string>War and Piece</string></value></member><member><name>amount</name><value><int>20</int></value></member></struct></value>"},
 	{0, new(*int), "<value><int></int></value>"},
@@ -59,7 +62,7 @@ func Test_unmarshal(t *testing.T) {
 	for _, tt := range unmarshalTests {
 		v := reflect.New(reflect.TypeOf(tt.value))
 		if err := unmarshal([]byte(tt.xml), v.Interface()); err != nil {
-			t.Fatalf("unmarshal error: %v", err)
+			t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, tt.value)
 		}
 
 		v = v.Elem()

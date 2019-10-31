@@ -88,8 +88,8 @@ func (codec *clientCodec) ReadResponseHeader(response *rpc.Response) (err error)
 	response.Seq = seq
 
 	codec.responsesMu.RLock()
-	httpResponse := codec.responses[*seq]
-	delete(codec.responses, *seq)
+	httpResponse := codec.responses[seq]
+	delete(codec.responses, seq)
 	codec.responsesMu.RUnlock()
 
 	defer httpResponse.Body.Close()
@@ -105,7 +105,6 @@ func (codec *clientCodec) ReadResponseHeader(response *rpc.Response) (err error)
 	}
 
 	var respData []byte
-	var err error
 	if contentLength != -1 {
 		respData = make([]byte, contentLength)
 		_, err = io.ReadFull(httpResponse.Body, respData)
@@ -127,7 +126,7 @@ func (codec *clientCodec) ReadResponseHeader(response *rpc.Response) (err error)
 		return err
 
 	}
-	codec.response = resp
+	codec.response = *resp
 
 	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
 		return &XmlRpcError{HttpStatusCode: httpResponse.StatusCode}

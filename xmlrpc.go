@@ -18,9 +18,6 @@ func (e *XmlRpcError) Error() string {
 		e.Err, e.Code, e.HttpStatusCode)
 }
 
-// Base64 represents value in base64 encoding
-type Base64 string
-
 type Params struct {
 	Params []interface{}
 }

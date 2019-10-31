@@ -1,7 +1,6 @@
 package xmlrpc
 
 import (
-	"fmt"
 	"regexp"
 )
 
@@ -35,6 +34,10 @@ func NewResponse(data []byte, httpStatusCode int) *Response {
 		httpStatusCode: httpStatusCode,
 
 	}
+}
+
+func (r *Response) Failed() bool {
+	return faultRx.Match(r.data)
 }
 
 func (r *Response) Err() error {

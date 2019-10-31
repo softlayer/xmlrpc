@@ -188,7 +188,7 @@ func Test_unmarshalExistingArray(t *testing.T) {
 
 		v = []interface{}{&v1, &v2, &v3}
 	)
-	if err := unmarshal([]byte(arrayValueXML), &v); err != nil {
+	if err := unmarshal([]byte(wrap_xml(arrayValueXML)), &v); err != nil {
 		t.Fatal(err)
 	}
 

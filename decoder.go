@@ -241,8 +241,8 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 			// and see if things still work.
 			// https://github.com/renier/xmlrpc/pull/2
 			if val.Kind() == reflect.Struct {
-				pslice = reflect.New(reflect.SliceOf(reflect.TypeOf(val.Interface()))).Elem()
-				val = pslice
+				slice = reflect.New(reflect.SliceOf(reflect.TypeOf(val.Interface()))).Elem()
+				val = slice
 			} else {
 				return err
 			}
@@ -272,6 +272,7 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 							return invalidXmlError
 						}
 
+						// Incase the incoming val is already defined.
 						if index < slice.Len() {
 							v := slice.Index(index)
 							if v.Kind() == reflect.Interface {

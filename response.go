@@ -1,12 +1,14 @@
 package xmlrpc
 
 import (
+	"fmt"
 	"regexp"
 )
 
 var (
 	faultRx = regexp.MustCompile(`<fault>(\s|\S)+</fault>`)
 )
+
 
 type failedResponse struct {
 	Code  interface{} `xmlrpc:"faultCode"`
@@ -31,11 +33,8 @@ func NewResponse(data []byte, httpStatusCode int) *Response {
 	return &Response{
 		data: data,
 		httpStatusCode: httpStatusCode,
-	}
-}
 
-func (r *Response) Failed() bool {
-	return faultRx.Match(r.data)
+	}
 }
 
 func (r *Response) Err() error {
@@ -55,3 +54,4 @@ func (r *Response) Unmarshal(v interface{}) error {
 
 	return nil
 }
+

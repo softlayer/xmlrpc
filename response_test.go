@@ -28,12 +28,12 @@ const faultRespXml = `
 </methodResponse>`
 
 func Test_failedResponse(t *testing.T) {
+
 	resp := NewResponse([]byte(faultRespXml), 400)
 
 	if !resp.Failed() {
 		t.Fatal("Failed() error: expected true, got false")
 	}
-
 	if resp.Err() == nil {
 		t.Fatal("Err() error: expected error, got nil")
 	}

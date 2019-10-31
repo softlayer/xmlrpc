@@ -5,10 +5,14 @@ import (
 	"encoding/xml"
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// Base64 represents value in base64 encoding
+type Base64 string
 
 type encodeFunc func(reflect.Value) ([]byte, error)
 
@@ -52,7 +56,7 @@ func encodeValue(val reflect.Value) ([]byte, error) {
 		b = []byte(fmt.Sprintf("<i4>%s</i4>", strconv.FormatUint(val.Uint(), 10)))
 	case reflect.Float32, reflect.Float64:
 		b = []byte(fmt.Sprintf("<double>%s</double>",
-			strconv.FormatFloat(val.Float(), 'g', -1, val.Type().Bits())))
+			strconv.FormatFloat(val.Float(), 'f', -1, val.Type().Bits())))
 	case reflect.Bool:
 		if val.Bool() {
 			b = []byte("<boolean>1</boolean>")
@@ -149,6 +153,8 @@ func encodeStruct(value reflect.Value) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+var sortMapKeys bool
+
 func encodeMap(val reflect.Value) ([]byte, error) {
 	var t = val.Type()
 
@@ -161,6 +167,10 @@ func encodeMap(val reflect.Value) ([]byte, error) {
 	b.WriteString("<struct>")
 
 	keys := val.MapKeys()
+
+	if sortMapKeys {
+		sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
+	}
 
 	for i := 0; i < val.Len(); i++ {
 		key := keys[i]

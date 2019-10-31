@@ -59,7 +59,7 @@ var unmarshalTests = []struct {
 func Test_unmarshal(t *testing.T) {
 	for _, tt := range unmarshalTests {
 		v := reflect.New(reflect.TypeOf(tt.value))
-		if err := unmarshal([]byte(tt.xml), v.Interface()); err != nil {
+		if err := unmarshal([]byte(wrap_xml(tt.xml)), v.Interface()); err != nil {
 			t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, tt.value)
 		}
 
@@ -140,19 +140,76 @@ func Test_decodeNonUTF8Response(t *testing.T) {
 	CharsetReader = nil
 }
 
+type server struct {
+	Hostname  string
+	Speed int
+	Data []int
+}
+
+var unmarshalTestsSL = []struct {
+	value interface{}
+	ptr   interface{}
+	xml   string
+}{
+	{100, new(*int), "<value><int>100</int></value>"},
+	{[]int{31}, new(*[]int),  "<value><int>31</int></value>"},
+	{book{"War and Piece", 20}, new(*book), "<value><struct><member><name>Title</name><value><string>War and Piece</string></value></member><member><name>Amount</name><value><int>20</int></value></member></struct></value>"},
+	{server{"Testing", 10, []int{1,2}}, new(*server), "<value><struct><member><name>Hostname</name><value>" +
+		"<string>Testing</string></value></member><member><name>Speed</name><value><int>10</int></value></member>" +
+		"<member><name>Data</name><value><array><data><value><int>1</int></value><value><int>2</int></value></data>" +
+		"</array></value></member></struct></value>"},
+	{[]server{{"Toasting", 11, []int{2,3}}}, new(*[]server), "<value><struct><member><name>Hostname</name><value>" +
+		"<string>Toasting</string></value></member><member><name>Speed</name><value><int>11</int></value></member>" +
+		"<member><name>Data</name><value><array><data><value><int>2</int></value><value><int>3</int></value></data>" +
+		"</array></value></member></struct></value>"},
+}
+
 func Test_unmarshalMismatchCorrection(t *testing.T) {
-	// Test specific to how SoftLayer can sometimes send out an array response.
-	xml := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><params><param><value><int>31</int></value></param></params></xml>"
-	expected := []int{31}
-	var v []int
-	if err := unmarshal([]byte(xml), &v); err != nil {
-		t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, expected)
-	}
+	// This test is for SoftLayer specific responses.
+	// If a single value is returned, a struct is the response instead of a splice.
+	// So we need to coerce the result back to a splice.
+	for _, tt := range unmarshalTestsSL {
+		v := reflect.New(reflect.TypeOf(tt.value))
+		if err := unmarshal([]byte(wrap_xml(tt.xml)), v.Interface()); err != nil {
+			t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, tt.value)
+		}
 
-	if v[0] != expected[0] {
-		t.Fatalf("%v != %v", v, expected)
-	}
+		v = v.Elem()
 
+		if v.Kind() == reflect.Slice {
+			vv := reflect.ValueOf(tt.value)
+			if vv.Len() != v.Len() {
+				t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", tt.value, v.Interface())
+			}
+			for i := 0; i < v.Len(); i++ {
+				a1 := v.Index(i).Interface()
+				a2 := vv.Index(i).Interface()
+				// Checks for a slice element that contains structs
+				if v.Index(i).Kind() == reflect.Struct {
+					if !reflect.DeepEqual(a1, a2) {
+						t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", a1, a2)
+					}
+				} else {
+					if a1 != a2 {
+						t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", a1, a2)
+					}
+				}
+			}
+		} else {
+			a1 := v.Interface()
+			a2 := interface{}(tt.value)
+
+			if !reflect.DeepEqual(a1, a2) {
+				t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", tt.value, v.Interface())
+			}
+		}
+	}
+}
+
+func wrap_xml(xml_string string) string {
+	head := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><params><param>"
+	tail := "</param></params></xml>"
+	return string(head + xml_string + tail)
 }
 
 func decode(charset string, input io.Reader) (io.Reader, error) {

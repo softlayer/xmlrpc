@@ -32,8 +32,7 @@ var (
 
 	// This Regex exists to detect repsponses that contain an array. Which is required because the SoftLayer API
 	// will say it is returning an array, but actually return a struct if there is only one element.
-	// topArrayRE = regexp.MustCompile(`^<\?xml version="1.0" encoding=".+"\?>\s*<params>\s*<param>\s*<value>\s*<array>`)
-	topArrayRE = regexp.MustCompile(`<array>`)
+	topArrayRE = regexp.MustCompile(`^<\?xml version="1.0" encoding=".+"\?>\s*<params>\s*<param>\s*<value>\s*<array>`)
 )
 
 type TypeMismatchError string

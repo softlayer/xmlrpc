@@ -49,10 +49,6 @@ func (codec *clientCodec) WriteRequest(request *rpc.Request, args interface{}) (
 		return err
 	}
 
-	if err != nil {
-		return err
-	}
-
 	if codec.cookies != nil {
 		for _, cookie := range codec.cookies.Cookies(codec.url) {
 			httpRequest.AddCookie(cookie)

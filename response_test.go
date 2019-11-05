@@ -19,7 +19,7 @@ const faultRespXml = `
         <member>
           <name>faultCode</name>
           <value>
-            <int>410</int>
+            <string>410</string>
           </value>
         </member>
       </struct>
@@ -28,14 +28,18 @@ const faultRespXml = `
 </methodResponse>`
 
 func Test_failedResponse(t *testing.T) {
-	resp := Response([]byte(faultRespXml))
 
+	resp := NewResponse([]byte(faultRespXml), 400)
+
+	if !resp.Failed() {
+		t.Fatal("Failed() error: expected true, got false")
+	}
 	if resp.Err() == nil {
 		t.Fatal("Err() error: expected error, got nil")
 	}
 
-	fault := resp.Err().(FaultError)
-	if fault.Code != 410 && fault.String != "You must log in before using this part of Bugzilla." {
+	err := resp.Err().(*XmlRpcError)
+	if err.Code != "410" && err.Err != "You must log in before using this part of Bugzilla." {
 		t.Fatal("Err() error: got wrong error")
 	}
 }
@@ -62,7 +66,7 @@ const emptyValResp = `
 </methodResponse>`
 
 func Test_responseWithEmptyValue(t *testing.T) {
-	resp := Response([]byte(emptyValResp))
+	resp := NewResponse([]byte(emptyValResp), 201)
 
 	result := struct {
 		User  string `xmlrpc:"user"`

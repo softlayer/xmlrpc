@@ -7,16 +7,21 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 const (
-	iso8601        = "20060102T15:04:05"
-	iso8601Z       = "20060102T15:04:05Z07:00"
-	iso8601Hyphen  = "2006-01-02T15:04:05"
-	iso8601HyphenZ = "2006-01-02T15:04:05Z07:00"
+	iso8601         = "20060102T15:04:05"
+	iso8601hyphen   = "2006-01-02T15:04:05Z"
+	iso8601hyphenTZ = "2006-01-02T15:04:05-07:00"
+	iso8601Z        = "20060102T15:04:05Z07:00"
+	iso8601Hyphen   = "2006-01-02T15:04:05"
+	iso8601HyphenZ  = "2006-01-02T15:04:05Z07:00"
 )
 
 var (
@@ -24,8 +29,12 @@ var (
 	// charset into UTF-8.
 	CharsetReader func(string, io.Reader) (io.Reader, error)
 
-	timeLayouts     = []string{iso8601, iso8601Z, iso8601Hyphen, iso8601HyphenZ}
+	timeLayouts     = []string{iso8601, iso8601hyphen, iso8601hyphenTZ, iso8601Z, iso8601Hyphen, iso8601HyphenZ}
 	invalidXmlError = errors.New("invalid xml")
+
+	// This Regex exists to detect repsponses that contain an array. Which is required because the SoftLayer API
+	// will say it is returning an array, but actually return a struct if there is only one element.
+	topArrayRE = regexp.MustCompile(`^<\?xml version="1.0" encoding=".+"\?>\s*<params>\s*<param>\s*<value>\s*<array>`)
 )
 
 type TypeMismatchError string
@@ -41,6 +50,8 @@ func unmarshal(data []byte, v interface{}) (err error) {
 
 	if CharsetReader != nil {
 		dec.CharsetReader = CharsetReader
+	} else {
+		dec.CharsetReader = defaultCharsetReader
 	}
 
 	var tok xml.Token
@@ -55,7 +66,16 @@ func unmarshal(data []byte, v interface{}) (err error) {
 				if val.Kind() != reflect.Ptr {
 					return errors.New("non-pointer value passed to unmarshal")
 				}
-				if err = dec.decodeValue(val.Elem()); err != nil {
+
+				val = val.Elem()
+				// Some APIs that normally return a collection, omit the []'s when
+				// the API returns a single value.
+				if val.Kind() == reflect.Slice && !topArrayRE.MatchString(string(data)) {
+					val.Set(reflect.MakeSlice(val.Type(), 1, 1))
+					val = val.Index(0)
+				}
+
+				if err = dec.decodeValue(val); err != nil {
 					return err
 				}
 
@@ -143,19 +163,7 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 
 		if !ismap {
 			fields = make(map[string]reflect.Value)
-
-			for i := 0; i < valType.NumField(); i++ {
-				field := valType.Field(i)
-				fieldVal := val.FieldByName(field.Name)
-
-				if fieldVal.CanSet() {
-					if fn := field.Tag.Get("xmlrpc"); fn != "" {
-						fields[fn] = fieldVal
-					} else {
-						fields[field.Name] = fieldVal
-					}
-				}
-			}
+			buildStructFieldMap(&fields, val)
 		} else {
 			// Create initial empty map
 			pmap.Set(reflect.MakeMap(valType))
@@ -228,7 +236,16 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 		if checkType(val, reflect.Interface) == nil && val.IsNil() {
 			slice = reflect.ValueOf([]interface{}{})
 		} else if err = checkType(val, reflect.Slice); err != nil {
-			return err
+			// Check to see if we have an unexpected array when we expect
+			// a struct. Adjust by expecting an array of the struct type
+			// and see if things still work.
+			// https://github.com/renier/xmlrpc/pull/2
+			if val.Kind() == reflect.Struct {
+				slice = reflect.New(reflect.SliceOf(reflect.TypeOf(val.Interface()))).Elem()
+				val = slice
+			} else {
+				return err
+			}
 		}
 
 	ArrayLoop:
@@ -255,6 +272,7 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 							return invalidXmlError
 						}
 
+						// Incase the incoming val is already defined.
 						if index < slice.Len() {
 							v := slice.Index(index)
 							if v.Kind() == reflect.Interface {
@@ -304,6 +322,7 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 			return invalidXmlError
 		}
 
+	ParseValue:
 		switch typeName {
 		case "int", "i4", "i8":
 			if checkType(val, reflect.Interface) == nil && val.IsNil() {
@@ -315,15 +334,27 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 				pi := reflect.New(reflect.TypeOf(i)).Elem()
 				pi.SetInt(i)
 				val.Set(pi)
-			} else if err = checkType(val, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64); err != nil {
+			} else if err = checkType(val, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64); err != nil {
 				return err
 			} else {
-				i, err := strconv.ParseInt(string(data), 10, val.Type().Bits())
-				if err != nil {
-					return err
-				}
+				k := val.Kind()
+				isInt := k == reflect.Int || k == reflect.Int8 || k == reflect.Int16 || k == reflect.Int32 || k == reflect.Int64
 
-				val.SetInt(i)
+				if isInt {
+					i, err := strconv.ParseInt(string(data), 10, val.Type().Bits())
+					if err != nil {
+						return err
+					}
+
+					val.SetInt(i)
+				} else {
+					i, err := strconv.ParseUint(string(data), 10, val.Type().Bits())
+					if err != nil {
+						return err
+					}
+
+					val.SetUint(i)
+				}
 			}
 		case "string", "base64":
 			str := string(data)
@@ -332,6 +363,22 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 				pstr.SetString(str)
 				val.Set(pstr)
 			} else if err = checkType(val, reflect.String); err != nil {
+				valName := val.Type().Name()
+				if valName == "" {
+					valName = reflect.Indirect(val).Type().Name()
+				}
+
+				if valName == "Time" {
+					timeField := val.FieldByName(valName)
+					if timeField.IsValid() {
+						val = timeField
+					}
+					typeName = "dateTime.iso8601"
+					goto ParseValue
+				} else if strings.HasPrefix(strings.ToLower(valName), "float") {
+					typeName = "double"
+					goto ParseValue
+				}
 				return err
 			} else {
 				val.SetString(str)
@@ -339,9 +386,9 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 		case "dateTime.iso8601":
 			var t time.Time
 			var err error
+			for _, df := range timeLayouts {
+				t, err = time.Parse(df, string(data))
 
-			for _, layout := range timeLayouts {
-				t, err = time.Parse(layout, string(data))
 				if err == nil {
 					break
 				}
@@ -354,10 +401,17 @@ func (dec *decoder) decodeValue(val reflect.Value) error {
 				ptime := reflect.New(reflect.TypeOf(t)).Elem()
 				ptime.Set(reflect.ValueOf(t))
 				val.Set(ptime)
-			} else if _, ok := val.Interface().(time.Time); !ok {
-				return TypeMismatchError(fmt.Sprintf("error: type mismatch error - can't decode %v to time", val.Kind()))
+			} else if !reflect.TypeOf((time.Time)(t)).ConvertibleTo(val.Type()) {
+				return TypeMismatchError(
+					fmt.Sprintf(
+						"error: type mismatch error - can't decode %v (%s.%s) to time",
+						val.Kind(),
+						val.Type().PkgPath(),
+						val.Type().Name(),
+					),
+				)
 			} else {
-				val.Set(reflect.ValueOf(t))
+				val.Set(reflect.ValueOf(t).Convert(val.Type()))
 			}
 		case "boolean":
 			v, err := strconv.ParseBool(string(data))
@@ -470,4 +524,40 @@ func checkType(val reflect.Value, kinds ...reflect.Kind) error {
 	}
 
 	return nil
+}
+
+func buildStructFieldMap(fieldMap *map[string]reflect.Value, val reflect.Value) {
+	valType := val.Type()
+	valFieldNum := valType.NumField()
+	for i := 0; i < valFieldNum; i++ {
+		field := valType.Field(i)
+		fieldVal := val.FieldByName(field.Name)
+
+		if field.Anonymous {
+			// Drill down into embedded structs
+			buildStructFieldMap(fieldMap, fieldVal)
+			continue
+		}
+
+		if fieldVal.CanSet() {
+			if fn := field.Tag.Get("xmlrpc"); fn != "" {
+				fn = strings.Split(fn, ",")[0]
+				(*fieldMap)[fn] = fieldVal
+			} else {
+				(*fieldMap)[field.Name] = fieldVal
+			}
+		}
+	}
+}
+
+// http://stackoverflow.com/a/34712322/3160958
+// https://groups.google.com/forum/#!topic/golang-nuts/VudK_05B62k
+func defaultCharsetReader(charset string, input io.Reader) (io.Reader, error) {
+	if charset == "iso-8859-1" || charset == "ISO-8859-1" {
+		return charmap.ISO8859_1.NewDecoder().Reader(input), nil
+	} else if strings.HasPrefix(charset, "utf") || strings.HasPrefix(charset, "UTF") {
+		return input, nil
+	}
+
+	return nil, fmt.Errorf("Unknown charset: %s", charset)
 }

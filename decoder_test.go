@@ -22,6 +22,9 @@ type bookUnexported struct {
 	amount int
 }
 
+
+type timestamp time.Time
+
 var unmarshalTests = []struct {
 	value interface{}
 	ptr   interface{}
@@ -48,6 +51,12 @@ var unmarshalTests = []struct {
 	// double
 	{12.134, new(*float32), "<value><double>12.134</double></value>"},
 	{-12.134, new(*float32), "<value><double>-12.134</double></value>"},
+
+	{time.Unix(1386622812, 0).UTC(), new(*time.Time), "<value><dateTime.iso8601>20131209T21:00:12</dateTime.iso8601></value>"},
+	{time.Unix(1386622812, 0).UTC(), new(*time.Time), "<value><dateTime.iso8601>2013-12-09T21:00:12Z</dateTime.iso8601></value>"},
+	{time.Unix(1386622812, 0).UTC(), new(*timestamp), "<value><dateTime.iso8601>20131209T21:00:12</dateTime.iso8601></value>"},
+	{time.Unix(1386622812, 0).UTC(), new(*timestamp), "<value><dateTime.iso8601>2013-12-09T21:00:12Z</dateTime.iso8601></value>"},
+
 
 	// datetime.iso8601
 	{_time("2013-12-09T21:00:12Z"), new(*time.Time), "<value><dateTime.iso8601>20131209T21:00:12</dateTime.iso8601></value>"},
@@ -82,8 +91,8 @@ func _time(s string) time.Time {
 func Test_unmarshal(t *testing.T) {
 	for _, tt := range unmarshalTests {
 		v := reflect.New(reflect.TypeOf(tt.value))
-		if err := unmarshal([]byte(tt.xml), v.Interface()); err != nil {
-			t.Fatalf("unmarshal error: %v", err)
+		if err := unmarshal([]byte(wrap_xml(tt.xml)), v.Interface()); err != nil {
+			t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, tt.value)
 		}
 
 		v = v.Elem()
@@ -112,7 +121,7 @@ func Test_unmarshal(t *testing.T) {
 func Test_unmarshalToNil(t *testing.T) {
 	for _, tt := range unmarshalTests {
 		if err := unmarshal([]byte(tt.xml), tt.ptr); err != nil {
-			t.Fatalf("unmarshal error: %v", err)
+			t.Fatalf("unmarshal error: %v\n\tFailed on %v", err, tt.xml)
 		}
 	}
 }
@@ -179,7 +188,7 @@ func Test_unmarshalExistingArray(t *testing.T) {
 
 		v = []interface{}{&v1, &v2, &v3}
 	)
-	if err := unmarshal([]byte(arrayValueXML), &v); err != nil {
+	if err := unmarshal([]byte(wrap_xml(arrayValueXML)), &v); err != nil {
 		t.Fatal(err)
 	}
 
@@ -223,6 +232,78 @@ func Test_decodeNonUTF8Response(t *testing.T) {
 	}
 
 	CharsetReader = nil
+}
+
+type server struct {
+	Hostname  string
+	Speed int
+	Data []int
+}
+
+var unmarshalTestsSL = []struct {
+	value interface{}
+	ptr   interface{}
+	xml   string
+}{
+	{100, new(*int), "<value><int>100</int></value>"},
+	{[]int{31}, new(*[]int),  "<value><int>31</int></value>"},
+	{book{"War and Piece", 20}, new(*book), "<value><struct><member><name>Title</name><value><string>War and Piece</string></value></member><member><name>Amount</name><value><int>20</int></value></member></struct></value>"},
+	{server{"Testing", 10, []int{1,2}}, new(*server), "<value><struct><member><name>Hostname</name><value>" +
+		"<string>Testing</string></value></member><member><name>Speed</name><value><int>10</int></value></member>" +
+		"<member><name>Data</name><value><array><data><value><int>1</int></value><value><int>2</int></value></data>" +
+		"</array></value></member></struct></value>"},
+	{[]server{{"Toasting", 11, []int{2,3}}}, new(*[]server), "<value><struct><member><name>Hostname</name><value>" +
+		"<string>Toasting</string></value></member><member><name>Speed</name><value><int>11</int></value></member>" +
+		"<member><name>Data</name><value><array><data><value><int>2</int></value><value><int>3</int></value></data>" +
+		"</array></value></member></struct></value>"},
+}
+
+func Test_unmarshalMismatchCorrection(t *testing.T) {
+	// This test is for SoftLayer specific responses.
+	// If a single value is returned, a struct is the response instead of a splice.
+	// So we need to coerce the result back to a splice.
+	for _, tt := range unmarshalTestsSL {
+		v := reflect.New(reflect.TypeOf(tt.value))
+		if err := unmarshal([]byte(wrap_xml(tt.xml)), v.Interface()); err != nil {
+			t.Fatalf("unmarshal error: %v.\n\tFailed on %v\n", err, tt.value)
+		}
+
+		v = v.Elem()
+
+		if v.Kind() == reflect.Slice {
+			vv := reflect.ValueOf(tt.value)
+			if vv.Len() != v.Len() {
+				t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", tt.value, v.Interface())
+			}
+			for i := 0; i < v.Len(); i++ {
+				a1 := v.Index(i).Interface()
+				a2 := vv.Index(i).Interface()
+				// Checks for a slice element that contains structs
+				if v.Index(i).Kind() == reflect.Struct {
+					if !reflect.DeepEqual(a1, a2) {
+						t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", a1, a2)
+					}
+				} else {
+					if a1 != a2 {
+						t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", a1, a2)
+					}
+				}
+			}
+		} else {
+			a1 := v.Interface()
+			a2 := interface{}(tt.value)
+
+			if !reflect.DeepEqual(a1, a2) {
+				t.Fatalf("unmarshal error:\nexpected: %v\n     got: %v", tt.value, v.Interface())
+			}
+		}
+	}
+}
+
+func wrap_xml(xml_string string) string {
+	head := "<?xml version=\"1.0\" encoding=\"UTF-8\"?><params><param>"
+	tail := "</param></params></xml>"
+	return string(head + xml_string + tail)
 }
 
 func decode(charset string, input io.Reader) (io.Reader, error) {

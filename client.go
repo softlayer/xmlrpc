@@ -3,12 +3,15 @@ package xmlrpc
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"net/rpc"
 	"net/url"
+	"strconv"
 	"sync"
+	"time"
 )
 
 type Client struct {
@@ -28,21 +31,20 @@ type clientCodec struct {
 
 	// responses presents map of active requests. It is required to return request id, that
 	// rpc.Client can mark them as done.
-	responses map[uint64]*http.Response
-	mutex     sync.Mutex
 
+	responsesMu sync.RWMutex
+	responses   map[uint64]*http.Response
 	response Response
 
 	// ready presents channel, that is used to link request and it`s response.
 	ready chan uint64
-
 	// close notifies codec is closed.
 	close chan uint64
+
 }
 
 func (codec *clientCodec) WriteRequest(request *rpc.Request, args interface{}) (err error) {
 	httpRequest, err := NewRequest(codec.url.String(), request.ServiceMethod, args)
-
 	if err != nil {
 		return err
 	}
@@ -53,8 +55,8 @@ func (codec *clientCodec) WriteRequest(request *rpc.Request, args interface{}) (
 		}
 	}
 
-	var httpResponse *http.Response
-	httpResponse, err = codec.httpClient.Do(httpRequest)
+
+	httpResponse, err := codec.httpClient.Do(httpRequest)
 
 	if err != nil {
 		return err
@@ -64,10 +66,9 @@ func (codec *clientCodec) WriteRequest(request *rpc.Request, args interface{}) (
 		codec.cookies.SetCookies(codec.url, httpResponse.Cookies())
 	}
 
-	codec.mutex.Lock()
+	codec.responsesMu.Lock()
 	codec.responses[request.Seq] = httpResponse
-	codec.mutex.Unlock()
-
+	codec.responsesMu.Unlock()
 	codec.ready <- request.Seq
 
 	return nil
@@ -76,37 +77,56 @@ func (codec *clientCodec) WriteRequest(request *rpc.Request, args interface{}) (
 func (codec *clientCodec) ReadResponseHeader(response *rpc.Response) (err error) {
 	var seq uint64
 	select {
-	case seq = <-codec.ready:
-	case <-codec.close:
-		return errors.New("codec is closed")
+		case seq = <-codec.ready:
+		case <-codec.close:
+			return errors.New("codec is closed")
 	}
 	response.Seq = seq
 
-	codec.mutex.Lock()
+	codec.responsesMu.RLock()
 	httpResponse := codec.responses[seq]
 	delete(codec.responses, seq)
-	codec.mutex.Unlock()
+	codec.responsesMu.RUnlock()
 
 	defer httpResponse.Body.Close()
 
-	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
-		response.Error = fmt.Sprintf("request error: bad status code - %d", httpResponse.StatusCode)
-		return nil
+	contentLength := httpResponse.ContentLength
+	if contentLength == -1 {
+		if ntcoentLengthHeader, ok := httpResponse.Header["Ntcoent-Length"]; ok {
+			ntcoentLength, err := strconv.ParseInt(ntcoentLengthHeader[0], 10, 64)
+			if err == nil {
+				contentLength = ntcoentLength
+			}
+		}
 	}
 
-	body, err := ioutil.ReadAll(httpResponse.Body)
+	var respData []byte
+	if contentLength != -1 {
+		respData = make([]byte, contentLength)
+		_, err = io.ReadFull(httpResponse.Body, respData)
+	} else {
+		respData, err = ioutil.ReadAll(httpResponse.Body)
+	}
+
 	if err != nil {
 		response.Error = err.Error()
 		return nil
 	}
 
-	resp := Response(body)
-	if err := resp.Err(); err != nil {
-		response.Error = err.Error()
-		return nil
-	}
 
-	codec.response = resp
+	resp := NewResponse(respData, httpResponse.StatusCode)
+
+	if resp.Failed() {
+		err := resp.Err()
+		response.Error = fmt.Sprintf("%v", err)
+		return err
+
+	}
+	codec.response = *resp
+
+	if httpResponse.StatusCode < 200 || httpResponse.StatusCode >= 300 {
+		return &XmlRpcError{HttpStatusCode: httpResponse.StatusCode}
+	}
 
 	return nil
 }
@@ -124,17 +144,19 @@ func (codec *clientCodec) Close() error {
 	}
 
 	close(codec.close)
-
 	return nil
 }
 
 // NewClient returns instance of rpc.Client object, that is used to send request to xmlrpc service.
-func NewClient(requrl string, transport http.RoundTripper) (*Client, error) {
+func NewClient(requrl string, transport http.RoundTripper, timeout time.Duration) (*Client, error) {
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
 
-	httpClient := &http.Client{Transport: transport}
+	httpClient := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}
 
 	jar, err := cookiejar.New(nil)
 
@@ -151,8 +173,8 @@ func NewClient(requrl string, transport http.RoundTripper) (*Client, error) {
 	codec := clientCodec{
 		url:        u,
 		httpClient: httpClient,
-		close:      make(chan uint64),
 		ready:      make(chan uint64),
+		close:      make(chan uint64),
 		responses:  make(map[uint64]*http.Response),
 		cookies:    jar,
 	}

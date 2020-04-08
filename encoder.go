@@ -84,7 +84,6 @@ func encodeValue(val reflect.Value) ([]byte, error) {
 	return []byte(fmt.Sprintf("<value>%s</value>", string(b))), nil
 }
 
-
 func encodeStruct(structVal reflect.Value) ([]byte, error) {
 	var b bytes.Buffer
 
@@ -97,7 +96,8 @@ func encodeStruct(structVal reflect.Value) ([]byte, error) {
 
 		name := fieldType.Tag.Get("xmlrpc")
 		// if the tag has the omitempty property, skip it
-		if strings.HasSuffix(name, ",omitempty") && isZero(fieldVal) {
+		// fieldVal.IsZero() requires golang 1.13+
+		if strings.HasSuffix(name, ",omitempty") && fieldVal.IsZero() {
 			continue
 		}
 		name = strings.TrimSuffix(name, ",omitempty")

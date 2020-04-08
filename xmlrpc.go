@@ -21,5 +21,3 @@ func (e *XmlRpcError) Error() string {
 type Params struct {
 	Params []interface{}
 }
-
-type Struct map[string]interface{}

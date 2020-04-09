@@ -41,16 +41,12 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         go get -v -t -d ./...
         go test -v . -covermode=count -coverprofile=coverage.out
+        cat coverage.out
     - name: Convert coverage to lcov
       uses: jandelgado/gcov2lcov-action@v1.0.0
       with:
           infile: coverage.out
           outfile: coverage.lcov
-    - name: Upload coverage results
-      uses: actions/upload-artifact@v1
-      with:
-        name: coverage.lcov
-        path: coverage.*
     - name: Coveralls
       uses: coverallsapp/github-action@v1.0.1
       with:

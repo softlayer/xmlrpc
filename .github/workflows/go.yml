@@ -7,24 +7,6 @@ on:
     branches: [ master ]
 
 jobs:
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Install Go
-      uses: actions/setup-go@v1
-      with:
-        go-version: 1.13.x
-    - name: Checkout code
-      uses: actions/checkout@v1
-    - name: Install golangci-lint
-      run: |
-        go get github.com/golangci/golangci-lint/cmd/golangci-lint
-    - name: Run linters
-      run: |
-        export PATH=$PATH:$(go env GOPATH)/bin   
-        ./pre-commit
-
   test:
     strategy:
       matrix:
@@ -51,7 +33,7 @@ jobs:
       if: success()
       uses: actions/setup-go@v1
       with:
-        go-version: 1.13.x
+        go-version: 1.14.x
     - name: Checkout code
       uses: actions/checkout@v1
     - name: Calc coverage 
@@ -64,6 +46,11 @@ jobs:
       with:
           infile: coverage.out
           outfile: coverage.lcov
+    - name: Upload coverage results
+      uses: actions/upload-artifact@v1
+      with:
+        name: coverage.lcov
+        path: coverage.lcov
     - name: Coveralls
       uses: coverallsapp/github-action@v1.0.1
       with:

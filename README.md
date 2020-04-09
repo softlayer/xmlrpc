@@ -2,12 +2,15 @@
 
 ## Overview
 
-xmlrpc is an implementation of client side part of XMLRPC protocol in Go language.
+[![Coverage Status](https://coveralls.io/repos/github/softlayer/xmlrpc/badge.svg)](https://coveralls.io/github/softlayer/xmlrpc)
+![Build](https://github.com/softlayer/xmlrpc/workflows/Go/badge.svg)
+
+
+xmlrpc is an implementation of client side part of XMLRPC protocol in Go language. This project was forked from https://github.com/kolo/xmlrpc and contains a few minor changes to help interact with the [SoftLayer API](https://sldn.softlayer.com)
 
 ## Status
 
-This project is in minimal maintenance mode with no further development. Bug fixes
-are accepted, but it might take some time until they will be merged.
+This project is in minimal maintenance mode with no further development. Bug fixes are accepted, but it might take some time until they will be merged.
 
 ## Installation
 

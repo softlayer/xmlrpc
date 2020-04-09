@@ -41,7 +41,7 @@ jobs:
         export PATH=$PATH:$(go env GOPATH)/bin
         go get -v -t -d ./...
         go test -v . -covermode=count -coverprofile=coverage.out
-        sed -i "s/_$(pwd|sed 's/\//\\\//g')/./g" coverage.out
+        sed -i "s/$(pwd|sed 's/\//\\\//g')/./g" coverage.out
         cat coverage.out
     - name: Convert coverage to lcov
       uses: jandelgado/gcov2lcov-action@v1.0.0
